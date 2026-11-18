@@ -1,0 +1,174 @@
+ISEP26-XXX — Nom Prénom
+TP Module 3 — réponses
+
+=====================================================================
+ÉTAPE 1 — Lire l'arbre
+=====================================================================
+Arbre du premier étudiant (ISEP26-001) :
+
+  promotion                       (élément racine)
+   ├─ @annee   = "2026-2027"      (attribut)
+   ├─ @filiere = "Licence 1"      (attribut)
+   └─ etudiant                    (élément)
+       ├─ @matricule = "ISEP26-001"   (attribut)
+       ├─ @classe    = "L1-A"         (attribut)
+       ├─ nom        → texte "Sow"
+       ├─ prenom     → texte "Fatou"
+       ├─ email      → texte "fatou.sow@exemple.sn"
+       └─ notes
+           ├─ note (@matiere="XML")   → texte "14"
+           ├─ note (@matiere="XSD")   → texte "16"
+           └─ note (@matiere="XPath") → texte "15"
+
+1a. count(//etudiant)        = 12
+1b. count(//note)            = 34   (12 x 3 = 36, moins 2 notes manquantes :
+                                     ISEP26-006 n'a pas de note XPath,
+                                     ISEP26-009 n'a pas de note XPath)
+1c. count(//etudiant[email]) = 9
+Pourquoi 9 et pas 12 ? Le prédicat [email] ne garde que les étudiants qui ont
+un élément enfant <email>. Trois étudiants n'en ont pas : ISEP26-002 (Diallo),
+ISEP26-006 (Faye) et ISEP26-012 (Kane). 12 - 3 = 9.
+
+=====================================================================
+ÉTAPE 2 — XPath
+=====================================================================
+2a. //etudiant[@classe='L1-B']/nom
+    → Ba, Gueye, Faye, Cissé, Diouf, Kane
+
+2b. //etudiant[not(email)]/@matricule
+    → ISEP26-002, ISEP26-006, ISEP26-012
+
+2c. //etudiant[@matricule='ISEP26-007']/notes/note[@matiere='XPath']
+    → 16
+
+2d. count(//etudiant[count(notes/note) < 3])
+    → 2   (ISEP26-006 et ISEP26-009)
+
+2e. sum(//note[@matiere='XML']) div count(//note[@matiere='XML'])
+    → 142.5 / 12 = 11.875  (affiché 11.88 avec deux décimales)
+
+2f. count(//etudiant[sum(notes/note) div count(notes/note) >= 10])
+    → 9
+    (Admis : 001 15.00 ; 003 16.67 ; 004 10.67 ; 005 12.33 ; 007 15.00 ;
+     008 11.00 ; 009 12.50 ; 011 16.00 ; 012 10.00.
+     Non admis : 002 9.33 ; 006 8.00 ; 010 9.00.)
+    La moyenne se calcule sur les notes présentes (somme / nombre de notes),
+    et non sur 3 : sinon 006 et 009 seraient faussés.
+
+2g. //etudiant[notes/note[@matiere='XSD' and . > 15]]/@matricule
+    → ISEP26-001 (16) et ISEP26-011 (17)
+    (ISEP26-003 a exactement 15 : "dépasse" = strictement supérieur.)
+
+2h. Le dernier étudiant de L1-A :
+      (//etudiant[@classe='L1-A'])[last()]/prenom   → Ndèye (ISEP26-011, Sène)
+    Prédiction pour //etudiant[last()][@classe='L1-A']/prenom : résultat VIDE.
+    Explication : [last()] s'applique d'abord, par rapport au parent <promotion> :
+    il retient l'étudiant qui est le dernier enfant etudiant, c'est-à-dire
+    ISEP26-012 (Kane). Ensuite [@classe='L1-A'] filtre : Kane est en L1-B,
+    donc plus rien. Pour obtenir le dernier de L1-A, il faut d'abord filtrer
+    puis prendre last() sur l'ensemble filtré, d'où les parenthèses :
+    (//etudiant[@classe='L1-A'])[last()].
+
+=====================================================================
+ÉTAPE 3 — liste.xsl (déroulé à la main)
+=====================================================================
+Le processeur démarre sur la racine. La règle intégrée la traverse jusqu'à
+/promotion, qui correspond au premier template : il écrit <ul> puis exécute
+xsl:apply-templates select="etudiant". Chaque <etudiant> est traité par
+le second template, dans l'ordre du document.
+
+Étudiant 1 (Sow Fatou)    → <li>Fatou Sow</li>
+Étudiant 2 (Diallo Moussa) → <li>Moussa Diallo</li>
+
+Sortie partielle :
+<ul>
+  <li>Fatou Sow</li>
+  <li>Moussa Diallo</li>
+  ... (10 autres <li>)
+</ul>
+
+=====================================================================
+ÉTAPE 4 — Tableau et CSS
+=====================================================================
+tableau.xsl produit une page HTML5 complète : meta charset, <title> tiré de
+@filiere, lien vers style.css, <header> avec <h1>, <main> avec tableau.
+Moyenne : format-number(sum(notes/note) div count(notes/note), '0.00').
+
+=====================================================================
+ÉTAPE 5 — Mise en forme conditionnelle
+=====================================================================
+- Email absent : xsl:choose → <span class="absent">non renseigné</span>.
+  Cela concerne exactement 3 lignes (002, 006, 012).
+- Colonne Résultat : Admis si $moy >= $seuil, sinon À revoir.
+- <xsl:param name="seuil" select="10"/> est défini une seule fois en haut de
+  la feuille : changer 10 change aussi la carte "admis" de l'étape 7.
+- La cellule de moyenne porte class="moyenne".
+
+=====================================================================
+ÉTAPE 6 — Tri et rang
+=====================================================================
+<xsl:sort select="sum(notes/note) div count(notes/note)"
+          data-type="number" order="descending"/>
+Rang : <xsl:value-of select="position()"/>, qui commence à 1.
+
+Prédiction sans data-type="number" : le tri est alors alphabétique (text).
+Les moyennes sont comparées comme des chaînes, caractère par caractère :
+"9.333…" > "9" > "8" > "16.666…" > "16" > "15" > …
+Le premier du classement serait donc Diallo Moussa (9.33), alors que le vrai
+premier est Sène Ndèye (16.00). Avec un tri texte, "9" passe avant "16" car
+le caractère '9' est supérieur au caractère '1'.
+
+=====================================================================
+ÉTAPE 7 — Chiffres clés (valeurs identiques à l'étape 2)
+=====================================================================
+Étudiants          : count(etudiant)                              = 12
+Admis (moy. >= 10) : count(etudiant[sum(notes/note) div
+                                    count(notes/note) >= $seuil]) = 9
+Moyenne en XML     : sum(etudiant/notes/note[@matiere='XML']) div
+                     count(etudiant/notes/note[@matiere='XML'])   = 11.88
+Emails manquants   : count(etudiant[not(email)])                  = 3
+
+=====================================================================
+ÉTAPE 8 — Un tableau par classe
+=====================================================================
+<xsl:key name="par-classe" match="etudiant" use="@classe"/>
+
+Les classes distinctes s'obtiennent avec :
+  etudiant[generate-id() = generate-id(key('par-classe', @classe)[1])]
+C'est le premier étudiant de chaque classe (un seul représentant par groupe).
+Pour chaque représentant, key('par-classe', @classe) renvoie tous les
+étudiants de sa classe. On les passe à xsl:apply-templates avec le même
+xsl:sort. Comme position() est calculé dans chaque appel d'apply-templates,
+le rang repart à 1 dans chaque tableau.
+Titre : "Classe L1-A (6 étudiants)" avec count($groupe).
+
+Classements attendus :
+  L1-A : Sène 16.00 ; Sow 15.00 ; Thiam 15.00 ; Mbaye 12.50 ; Sarr 12.33 ;
+         Diallo 9.33
+  L1-B : Ba 16.67 ; Cissé 11.00 ; Gueye 10.67 ; Kane 10.00 ; Diouf 9.00 ;
+         Faye 8.00
+(Sow et Thiam sont à égalité à 15.00 : le tri XSLT est stable, ils restent
+dans l'ordre du document.)
+
+=====================================================================
+ÉTAPE 9 (bonus) — Personnalisation
+=====================================================================
+Dans le template etudiant, remplacer <tr> par :
+
+  <tr>
+    <xsl:if test="position() = 1">
+      <xsl:attribute name="class">major</xsl:attribute>
+    </xsl:if>
+    ... (les <td> inchangés)
+  </tr>
+
+Dans style.css, par exemple :
+  :root{--bleu:#7c3aed; --vert:#0d9488; ...}
+  .major td{background:#fde68a !important; font-weight:700}
+
+Que se passe-t-il si xsl:attribute est placé après un élément enfant ?
+Un attribut doit être ajouté à l'élément avant toute création d'un enfant
+(texte ou élément). Placé après, c'est une erreur : selon le processeur,
+l'attribut est ignoré avec un avertissement (libxslt) ou la transformation
+s'arrête avec une erreur (Saxon). Dans les deux cas, la classe major
+n'apparaît pas.
